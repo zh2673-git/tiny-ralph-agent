@@ -15,9 +15,9 @@ from datetime import datetime
 
 from infrastructure.task_state import TaskState
 from infrastructure.tool_verifier import ToolVerifier
-from middleware.decision_small import DecisionMiddleware
-from middleware.execution_small import ExecutionMiddleware
-from middleware.feedback_small import FeedbackMiddleware
+from middleware.decision import DecisionMiddleware
+from middleware.execution import ExecutionMiddleware
+from middleware.feedback import FeedbackMiddleware
 
 
 class RalphLoop:

@@ -48,6 +48,10 @@ data/graphrag/
 
 # Test files
 .pytest_cache/
+
+# Design documents (not for GitHub)
+*智能体*.md
+*改造方案*.md
 .coverage
 htmlcov/
 

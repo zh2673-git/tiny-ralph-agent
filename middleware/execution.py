@@ -1,152 +1,238 @@
 """
-执行中间件 - 工具调用执行 + LLM 总结
+执行中间件 - 小模型优化版
+
+Ralph 风格：
+- 工具自造循环 - 小模型可以造工具
+- 单步执行 - 每步只做一个操作
+- 验证通过才下一步
+- max_retries 防止无限循环
 """
 
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-from langgraph.types import Command
-from typing import Literal, Dict, Any
-import importlib
+import importlib.util
+from typing import Dict, Any, Optional, Callable
+from pathlib import Path
 
 
 class ExecutionMiddleware:
-    def __init__(self):
-        self.llm = None
-        self.tools = []
-        self._load_tools()
+    """
+    执行中间件 - 小模型版
 
-    def _load_tools(self):
-        """自动从 tools 包加载所有工具"""
-        from tools import __all__ as tool_names
-        for tool_name in tool_names:
-            try:
-                tool = getattr(importlib.import_module(f"tools.{tool_name}"), tool_name)
-                self.tools.append(tool)
-            except Exception:
-                pass
+    核心职责：
+    1. 工具创建循环
+    2. 单步执行
+    3. 结果验证
+    4. 错误处理和重试
+    """
 
-    def set_llm(self, llm: BaseChatModel):
-        self.llm = llm
+    def __init__(
+        self,
+        tool_verifier,
+        tool_dir: str = "./tools/custom",
+        max_retries: int = 3
+    ):
+        self.tool_verifier = tool_verifier
+        self.tool_dir = Path(tool_dir)
+        self.max_retries = max_retries
 
-    def add_tool(self, tool_func):
-        self.tools.append(tool_func)
+    def execute_step(
+        self,
+        step: Dict[str, Any],
+        state: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        执行单个步骤
 
-    def __call__(self, state: Dict[str, Any]) -> Command[Literal["feedback", "decision"]]:
-        plan = state.get("plan", [])
-        current_step = state.get("current_step", 0)
-        goal = state.get("goal", "")
+        流程：
+        1. 检查工具状态
+        2. 如果需要创建工具 -> 造工具
+        3. 执行工具
+        4. 验证结果
+        """
+        required_tool = step.get("required_tool")
+        tool_status = step.get("tool_status", "available")
 
-        if current_step >= len(plan):
-            return Command(
-                update={"execution_result": {"status": "completed", "message": "完成"}, "current_step": current_step},
-                goto="feedback"
-            )
-
-        step = plan[current_step]
-        step_goal = step.get("goal", goal)
-        need_tool_from_decision = step.get("need_tool", True)
-
-        need_tool = self._needs_tool(step_goal) if need_tool_from_decision else False
-        if need_tool and self.tools:
-            result = self._execute_with_tool(step_goal)
-            tool_name = result.get("tool", "unknown")
+        if tool_status == "need_create":
+            return self._handle_tool_creation(step, state)
         else:
-            result = self._execute_with_llm(step_goal)
-            tool_name = "llm_direct"
+            return self._handle_normal_execution(step, state)
 
-        updated_plan = plan.copy()
-        updated_plan[current_step] = {**step, "status": "completed", "result": result}
+    def _handle_tool_creation(
+        self,
+        step: Dict[str, Any],
+        state: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """处理工具创建"""
+        required_tool = step.get("required_tool")
+        retry_count = state.get("retry_count", 0)
 
-        execution_results = state.get("execution_results", [])
-        execution_results.append({"step": current_step, "goal": step_goal, "result": result})
+        if retry_count >= self.max_retries:
+            return {
+                "success": False,
+                "error": f"工具 {required_tool} 创建失败，已达最大重试次数",
+                "action": "fail"
+            }
 
-        print(f"🔧 执行 → 步骤{current_step+1}: {step_goal[:40]}{'...' if len(step_goal) > 40 else ''} | 工具: {tool_name} | 状态: {result.get('status', 'unknown')}")
+        purpose = step.get("description", f"实现 {required_tool} 功能")
+        tool_code = self._generate_tool_code(required_tool, purpose, state)
 
-        summarized = self._summarize_result(result.get("result", ""), step_goal)
+        result = self.tool_verifier.verify(required_tool, tool_code)
 
-        ai_message = AIMessage(content=summarized)
+        if result["pass"]:
+            self.tool_verifier.register_tool(required_tool, {
+                "path": result["tool_path"],
+                "description": purpose,
+                "status": "available"
+            })
+            return {
+                "success": True,
+                "message": f"工具 {required_tool} 创建成功",
+                "tool_created": required_tool,
+                "action": "retry_step"
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"工具验证失败: {result['reason']}",
+                "action": "retry_creation"
+            }
 
-        next_step = current_step + 1
-        goto = "feedback"
+    def _handle_normal_execution(
+        self,
+        step: Dict[str, Any],
+        state: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """处理普通执行"""
+        required_tool = step.get("required_tool")
+        tool_path = self.tool_dir / f"{required_tool}.py"
 
-        is_last_step = next_step >= len(updated_plan)
-        exec_status = "completed" if is_last_step else result.get("status", "success")
+        if not tool_path.exists():
+            return {
+                "success": False,
+                "error": f"工具 {required_tool} 文件不存在",
+                "action": "create_tool"
+            }
 
-        return Command(
-            update={
-                "plan": updated_plan,
-                "current_step": next_step,
-                "execution_result": {"status": exec_status, "tool": tool_name, "result": result.get("result", "")},
-                "execution_results": execution_results,
-                "messages": [ai_message]
-            },
-            goto=goto
-        )
+        try:
+            result = self._run_tool(required_tool, tool_path, state)
+            return self._verify_result(step, result)
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"执行错误: {str(e)}",
+                "action": "retry"
+            }
 
-    def _needs_tool(self, goal: str) -> bool:
-        """判断目标是否需要工具"""
-        need_tool_keywords = ["搜索", "查找", "查询", "天气", "新闻", "最新", "实时", "当前"]
-        no_tool_keywords = ["你好", "介绍", "解释", "什么是", "怎么做", "为什么", "帮我", "告诉我"]
+    def _generate_tool_code(
+        self,
+        tool_name: str,
+        purpose: str,
+        state: Dict[str, Any]
+    ) -> str:
+        """
+        生成工具代码
 
-        for kw in no_tool_keywords:
-            if kw in goal and not any(nk in goal for nk in need_tool_keywords):
-                return False
+        小模型友好的模板
+        """
+        template = f'''
+"""
+工具: {tool_name}
+目的: {purpose}
+自动生成 by Ralph
+"""
 
-        for kw in need_tool_keywords:
-            if kw in goal:
+def execute(**params) -> dict:
+    """
+    执行 {tool_name}
+
+    返回格式:
+        {{"result": ..., "error": ...}}
+    """
+    try:
+        # 获取上下文信息
+        task_goal = params.get("task_goal", "")
+        current_step = params.get("current_step", 0)
+
+        # 实现工具逻辑
+        # TODO: 根据 purpose 实现具体功能
+
+        result = {{"message": "{tool_name} executed", "step": current_step}}
+
+        return {{"result": result}}
+
+    except Exception as e:
+        return {{"error": str(e)}}
+'''
+        return template
+
+    def _run_tool(
+        self,
+        tool_name: str,
+        tool_path: Path,
+        state: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """运行工具"""
+        spec = importlib.util.spec_from_file_location(tool_name, tool_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"无法加载工具 {tool_name}")
+
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        if not hasattr(module, 'execute'):
+            raise AttributeError(f"工具 {tool_name} 缺少 execute 函数")
+
+        params = {
+            "task_goal": state.get("goal", ""),
+            "current_step": state.get("current_step", 0),
+            "state": state
+        }
+
+        result = module.execute(**params)
+
+        if not isinstance(result, dict):
+            raise TypeError(f"工具返回格式错误: {type(result)}")
+
+        return result
+
+    def _verify_result(
+        self,
+        step: Dict[str, Any],
+        result: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """验证执行结果"""
+        if "error" in result:
+            return {
+                "success": False,
+                "error": result["error"],
+                "action": "retry"
+            }
+
+        expected_output = step.get("expected_output", "")
+
+        return {
+            "success": True,
+            "result": result.get("result"),
+            "expected": expected_output,
+            "action": "continue"
+        }
+
+    def get_tool_status(
+        self,
+        tool_name: str,
+        tool_inventory: Dict[str, Any]
+    ) -> str:
+        """获取工具状态"""
+        if tool_name in tool_inventory:
+            return tool_inventory[tool_name].get("status", "unknown")
+        return "not_found"
+
+    def should_retry(
+        self,
+        result: Dict[str, Any],
+        retry_count: int
+    ) -> bool:
+        """判断是否应该重试"""
+        if not result.get("success"):
+            if retry_count < self.max_retries:
                 return True
-
-        return True
-
-    def _execute_with_tool(self, goal: str) -> Dict[str, Any]:
-        """使用工具执行"""
-        for tool_func in self.tools:
-            try:
-                result = tool_func.invoke(goal)
-                return {"status": "success", "tool": getattr(tool_func, 'name', 'unknown'), "result": result}
-            except Exception:
-                continue
-
-        return {"status": "error", "tool": "none", "result": "所有工具执行失败"}
-
-    def _execute_with_llm(self, goal: str) -> Dict[str, Any]:
-        """直接使用 LLM 回答"""
-        if not self.llm:
-            return {"status": "success", "tool": "llm_direct", "result": f"无可用工具，使用 LLM: {goal}"}
-
-        try:
-            response = self.llm.invoke([
-                SystemMessage(content="你是一个友好的智能助手，直接回答用户的问题。"),
-                HumanMessage(content=goal)
-            ])
-            return {"status": "success", "tool": "llm_direct", "result": response.content if hasattr(response, 'content') else str(response)}
-        except Exception:
-            return {"status": "error", "tool": "llm_direct", "result": "LLM 执行失败"}
-
-    def _summarize_result(self, raw_result: str, goal: str) -> str:
-        if not raw_result:
-            return "抱歉，我无法回答这个问题。"
-
-        if len(raw_result) < 500:
-            return raw_result
-
-        if not self.llm:
-            return raw_result
-
-        prompt = f"""基于以下搜索结果，用简洁的语言总结回答用户的问题。
-
-用户问题: {goal}
-
-搜索结果:
-{raw_result[:3000]}
-
-请用简洁、友好的语言总结回答，控制在200字以内。"""
-
-        try:
-            response = self.llm.invoke([
-                SystemMessage(content="你是一个智能助手，负责总结搜索结果并回答用户问题。"),
-                HumanMessage(content=prompt)
-            ])
-            return response.content if hasattr(response, 'content') else str(response)
-        except Exception:
-            return raw_result
+        return False
