@@ -41,6 +41,7 @@ Thumbs.db
 runtime/
 tools/custom/
 skills/library/
+data/graphrag/
 *.log
 .env
 .env.local
