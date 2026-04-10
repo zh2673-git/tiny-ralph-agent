@@ -2424,7 +2424,63 @@ class FallbackStrategies:
 
 ---
 
-## 附录 B: 参考资料
+## 附录 B: 真实环境测试要求
+
+### B.1 测试框架
+
+Ralph 方案必须通过**真实环境测试**验证，不能只做导入测试：
+
+```bash
+# 运行真实环境测试
+python run_ralph_real_test.py
+```
+
+### B.2 测试用例 (test_prd_real.json)
+
+```json
+{
+  "project": "Ralph 智能体真实环境测试 - qwen3.5:4b",
+  "tasks": [
+    {"id": 1, "title": "测试 Ollama Runtime Chat", "verification": "..."},
+    {"id": 2, "title": "测试决策中间件 - 任务拆解", "verification": "..."},
+    {"id": 3, "title": "测试执行中间件 - 工具验证", "verification": "..."},
+    {"id": 4, "title": "测试反馈中间件 - 结果评估", "verification": "..."},
+    {"id": 5, "title": "测试任务状态管理", "verification": "..."},
+    {"id": 6, "title": "端到端测试 - Ralph 循环单次迭代", "verification": "..."},
+    {"id": 7, "title": "测试 Ollama 模型列表", "verification": "..."},
+    {"id": 8, "title": "测试决策中间件工具绑定", "verification": "..."}
+  ]
+}
+```
+
+### B.3 真实测试验证清单
+
+| 测试项 | 要求 | 验证方法 |
+|--------|------|----------|
+| Ollama Runtime | 能用 qwen3.5:4b 对话 | 实际调用 chat() 并获取响应 |
+| 决策拆解 | 用 qwen3.5:4b 拆解任务 | 调用 decompose_to_atomic_steps() |
+| 执行中间件 | 能执行工具并验证 | 调用 execute_step() |
+| 反馈中间件 | 能评估执行结果 | 调用 evaluate() |
+| 任务状态 | 创建/更新/完成 | 调用 TaskState 方法 |
+| 端到端 | Ralph 循环单次迭代 | 完整流程跑通 |
+
+### B.4 本地模型要求
+
+- **默认模型**: qwen3.5:4b
+- **Ollama 服务**: http://localhost:11434
+- **验证**: `curl http://localhost:11434/api/tags`
+
+### B.5 迭代要求
+
+Ralph 循环必须能：
+1. 自行检测失败（验证不通过）
+2. 自行修复问题
+3. 重新运行验证
+4. 成功后提交 GitHub
+
+---
+
+## 附录 C: 参考资料
 
 1. [snarktank/ralph - GitHub](https://github.com/snarktank/ralph)
 2. [LangGraph Documentation](https://langchain-ai.github.io/langgraph/)
