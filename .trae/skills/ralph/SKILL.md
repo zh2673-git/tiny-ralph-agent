@@ -1,11 +1,11 @@
 ---
 name: "ralph"
-description: "Ralph is an autonomous AI agent loop for iterative task completion. Invoke when user wants to automate development tasks using Ralph loop pattern."
+description: "Ralph autonomous AI agent loop for iterative task completion. Invoke when user wants to automate development tasks using Ralph loop pattern, break down complex projects into small verifiable tasks, or run autonomous task execution loops."
 ---
 
-# Ralph - Autonomous Agent Loop
+# Ralph - Autonomous AI Agent Loop
 
-Ralph is an AI agent loop that builds incrementally using small, verifiable tasks.
+Ralph is an autonomous AI agent loop for iterative task completion. It breaks down complex projects into small, verifiable tasks and executes them one by one.
 
 ## Core Concept
 
@@ -14,8 +14,8 @@ Ralph is an AI agent loop that builds incrementally using small, verifiable task
 │                     Ralph Loop                                   │
 │                                                                 │
 │  ┌─────────┐    ┌──────────┐    ┌─────────────┐                │
-│  │ prd.json │ → │  Ralph   │ → │  Fresh AI   │                │
-│  │ (tasks) │    │   Loop   │    │   Instance  │                │
+│  │ prd.json │ → │  Ralph   │ → │  Task Handler│                │
+│  │ (tasks) │    │   Loop   │    │   (AI/Func) │                │
 │  └─────────┘    └──────────┘    └─────────────┘                │
 │       ↑                                    │                     │
 │       └──────── progress.txt (learnings) ←┘                    │
@@ -30,7 +30,14 @@ Ralph is an AI agent loop that builds incrementally using small, verifiable task
 4. **Verification** - Quality checks (tests, typecheck) gate completion
 5. **Learnings** - Record patterns/gotchas for future iterations
 
-## Workflow
+## Installation
+
+This skill is self-contained. All required Python modules are in the skill directory:
+- `task_state.py` - Task state management
+- `tool_verifier.py` - Tool verification
+- `ralph_loop.py` - Main loop implementation
+
+## Usage
 
 ### 1. Create PRD (Task List)
 
@@ -38,50 +45,62 @@ Create `prd.json` with tasks structured for autonomous execution:
 
 ```json
 {
-  "project": "Project Name",
+  "project": "My Project",
   "tasks": [
     {
       "id": 1,
-      "title": "Implement task state manager",
-      "description": "Create infrastructure/task_state.py with TaskState class",
+      "title": "Implement feature A",
+      "description": "Create file A.py with class A",
       "status": "pending",
-      "verification": "python -c 'from infrastructure.task_state import TaskState; print(\"OK\")'"
+      "verification": "python -c 'import A; print(\"OK\")'"
     },
     {
       "id": 2,
-      "title": "Implement tool verifier",
-      "description": "Create infrastructure/tool_verifier.py with ToolVerifier class",
+      "title": "Implement feature B",
+      "description": "Create file B.py that uses A",
       "status": "pending",
-      "verification": "python -c 'from infrastructure.tool_verifier import ToolVerifier; print(\"OK\")'"
+      "verification": "python -c 'from B import B; print(\"OK\")'"
     }
   ]
 }
 ```
 
-### 2. Execute Ralph Loop
+### 2. Run Ralph Loop
 
-For each iteration:
-1. Read `prd.json` - find lowest ID with `status: "pending"`
-2. Build task context - include task description + all learnings
-3. Execute task with fresh AI instance
-4. Run verification command
-5. If pass: update `prd.json` status to `done`, append to `progress.txt`
-6. If fail: record error, increment retry count
-7. Repeat until all tasks complete
+```python
+from ralph_loop import RalphLoop
+
+# Initialize
+ralph = RalphLoop('prd.json')
+
+# Set task handler (your AI/function that executes tasks)
+def my_task_handler(task, context):
+    # Your implementation here
+    # Return (success: bool, message: str)
+    return True, "Task completed"
+
+ralph.set_task_handler(my_task_handler)
+
+# Run the loop
+summary = ralph.run()
+```
 
 ### 3. Progress Tracking
 
-`progress.txt` - Append-only learnings:
-```
-=== Iteration 3 ===
-Task: Implement tool verifier
-Error: Import failed - missing pathlib
-Solution: Add import pathlib
-Learned: Always check dependencies first
+Ralph automatically creates `progress.txt` with learnings:
 
-=== Iteration 4 ===
-Task: Implement tool verifier
-Success!
+```
+=== Iteration 1 ===
+Task [1]: Implement feature A
+Status: Success
+Message: Task completed
+Timestamp: 2024-01-15T10:30:00
+
+=== Iteration 2 ===
+Task [2]: Implement feature B
+Status: Failed
+Message: Import error
+Timestamp: 2024-01-15T10:35:00
 ```
 
 ## Task Structure Guidelines
@@ -95,80 +114,97 @@ Success!
 - "Implement entire agent system" (split into:感知层, 决策层, 执行层, etc.)
 - "Add all middleware" (split into one per middleware)
 
-## Implementation Pattern
+## API Reference
+
+### RalphLoop
+
+Main class for running the autonomous loop.
 
 ```python
-# Ralph Loop Core (pseudo-code)
-def ralph_loop(prd_path: str, max_iterations: int = 10):
-    progress_file = "progress.txt"
-    iteration = 0
-
-    while iteration < max_iterations:
-        # 1. Load tasks
-        tasks = load_json(prd_path)
-
-        # 2. Find next pending task (lowest ID first)
-        task = find_next_pending(tasks)
-
-        if not task:
-            print("All tasks complete!")
-            return
-
-        # 3. Build context with learnings
-        context = build_context(task, progress_file)
-
-        # 4. Execute with AI
-        result = execute_with_llm(context)
-
-        # 5. Verify
-        if verify(task["verification"]):
-            # 6. Update status
-            update_task_status(prd_path, task["id"], "done")
-            append_learnings(progress_file, task, "Success")
-        else:
-            # 7. Record failure, will retry
-            append_learnings(progress_file, task, f"Failed: {result['error']}")
-
-        iteration += 1
+RalphLoop(
+    prd_path: str,           # Path to prd.json
+    progress_path: str,      # Path to progress.txt (optional)
+    max_iterations: int = 50, # Max iterations (optional)
+    verifier: ToolVerifier   # Custom verifier (optional)
+)
 ```
 
-## Usage in This Project
+Methods:
+- `set_task_handler(handler)` - Set the function that executes tasks
+- `run()` - Run the loop until completion
+- `reset()` - Reset all tasks to pending
+- `get_status()` - Get current status
 
-For implementing `Ralph智能体改造方案.md`:
+### TaskStateManager
 
-1. **Parse the design doc** into atomic tasks
-2. **Create prd.json** with each module as a task
-3. **Execute Ralph loop** - each iteration implements one module
-4. **Verify** - run typecheck, basic import tests
-5. **Learn** - record what worked and what didn't
+Manages task state persistence.
 
-### Task Breakdown Example
+```python
+TaskStateManager(prd_path: str)
+```
 
-From `Ralph智能体改造方案.md`:
+Methods:
+- `load()` - Load project state from PRD file
+- `save()` - Save project state to PRD file
+- `get_next_pending_task()` - Get next pending task
+- `update_task(task)` - Update a task
+- `get_progress()` - Get progress statistics
+- `is_complete()` - Check if all tasks completed
 
-| Phase | Task | Verification |
-|-------|------|-------------|
-| Phase 1 | Create `infrastructure/task_state.py` | `python -c "from infrastructure.task_state import TaskState; print('OK')"` |
-| Phase 1 | Create `infrastructure/tool_verifier.py` | `python -c "from infrastructure.tool_verifier import ToolVerifier; print('OK')"` |
-| Phase 2 | Create `middleware/decision_small.py` | Import + basic instantiation |
-| Phase 2 | Create `middleware/execution_small.py` | Import + basic instantiation |
-| Phase 3 | Create `agent/ralph_loop.py` | Import + basic instantiation |
-| Phase 4 | Integrate with LangGraph | Run graph compilation test |
-| Phase 5 | End-to-end test | Execute full loop with test task |
+### ToolVerifier
 
-## Starting the Loop
+Verifies task completion by running commands.
 
-To start implementing the Ralph改造方案:
+```python
+ToolVerifier(timeout: int = 60, cwd: str = None)
+```
 
-1. Say "start Ralph loop" or "run ralph"
-2. I'll parse the design doc into tasks
-3. Create `prd.json` with all implementation tasks
-4. Execute loop: each iteration implements one module
-5. Continue until all phases complete
+Methods:
+- `verify(command)` - Run shell command and return result
+- `verify_import(module_path)` - Verify Python import
+- `verify_file_exists(file_path)` - Verify file exists
+- `verify_python_syntax(file_path)` - Verify Python syntax
+
+## Example: Complete Workflow
+
+```python
+from ralph_loop import RalphLoop, create_prd_template
+
+# 1. Create PRD
+tasks = [
+    {
+        "title": "Create utils module",
+        "description": "Create utils.py with helper functions",
+        "verification": "python -c 'import utils; print(\"OK\")'"
+    },
+    {
+        "title": "Create main module",
+        "description": "Create main.py that imports utils",
+        "verification": "python -c 'from main import main; print(\"OK\")'"
+    }
+]
+create_prd_template("My Project", tasks, "prd.json")
+
+# 2. Define task handler
+def execute_task(task, context):
+    # This is where you'd call an AI or implement logic
+    print(f"Executing: {task.title}")
+    print(context)
+    # Simulate work
+    return True, "Completed"
+
+# 3. Run Ralph
+ralph = RalphLoop("prd.json")
+ralph.set_task_handler(execute_task)
+summary = ralph.run()
+
+print(f"Completed {summary['completed']}/{summary['total_tasks']} tasks")
+```
 
 ## Important Notes
 
 - Ralph is designed for **small, verifiable tasks** - not large features
 - Each iteration should complete in one AI call
-- If a task fails 3 times, record it and move on (manual intervention needed)
+- If a task fails 3 times, it's marked as failed (manual intervention needed)
 - Always verify with concrete commands, not "looks good"
+- The task handler is responsible for the actual work (calling AI, etc.)

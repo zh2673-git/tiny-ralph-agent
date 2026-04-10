@@ -1,0 +1,45 @@
+{
+  "project": "Ralph Skill Test Project",
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Create data models",
+      "description": "Create models.py with User and Task dataclasses",
+      "status": "pending",
+      "verification": "python -c 'from models import User, Task; print(\"OK\")'",
+      "retry_count": 0,
+      "max_retries": 3
+    },
+    {
+      "id": 2,
+      "title": "Create database module",
+      "description": "Create database.py with Database class for persistence",
+      "status": "pending",
+      "verification": "python -c 'from database import Database; print(\"OK\")'",
+      "retry_count": 0,
+      "max_retries": 3
+    },
+    {
+      "id": 3,
+      "title": "Create API endpoints",
+      "description": "Create api.py with Flask/FastAPI endpoints for User and Task CRUD",
+      "status": "pending",
+      "verification": "python -c 'from api import app; print(\"OK\")'",
+      "retry_count": 0,
+      "max_retries": 3
+    },
+    {
+      "id": 4,
+      "title": "Write tests",
+      "description": "Create test_api.py with pytest tests for all endpoints",
+      "status": "pending",
+      "verification": "python -m pytest test_api.py -v",
+      "retry_count": 0,
+      "max_retries": 3
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "created": "2024-01-15"
+  }
+}

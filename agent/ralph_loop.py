@@ -231,8 +231,14 @@ class RalphLoop:
         prompt = self._build_step_prompt(context)
 
         try:
-            response = self.llm.invoke(prompt)
-            return self._parse_response(response)
+            if hasattr(self.llm, 'chat'):
+                from langchain_core.messages import HumanMessage
+                response = self.llm.chat(messages=[HumanMessage(content=prompt)])
+                response_text = response.generations[0].message.content
+            else:
+                response_text = self.llm.invoke(prompt)
+
+            return self._parse_response(response_text)
         except Exception as e:
             return {
                 "action": "error",
