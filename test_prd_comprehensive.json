@@ -1,0 +1,100 @@
+{
+  "project": "Ralph Comprehensive Test - Progressive Complex Tasks",
+  "description": "Test all Ralph agent capabilities with qwen3.5:4b model",
+  "test_config": {
+    "model": "qwen3.5:4b",
+    "ollama_url": "http://localhost:11434",
+    "max_retries": 3,
+    "timeout": 180
+  },
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Basic Task - List Directory",
+      "description": "Test if Ralph can use existing tools to complete simple task: list .py files",
+      "goal": "List all Python files in current directory and save to output/basic_list.txt",
+      "required_tools": ["list_dir", "file_write"],
+      "complexity": "Simple - existing tools can be called directly",
+      "test_capabilities": ["tool_call", "basic_execution"],
+      "verification": "python -c \"import os; assert os.path.exists('output/basic_list.txt'); print('OK: basic task completed')\"",
+      "expected": "Ralph calls list_dir to get file list, calls file_write to save result"
+    },
+    {
+      "id": 2,
+      "title": "Logging - Task State Persistence",
+      "description": "Test if Ralph automatically records task execution logs",
+      "goal": "Execute task 1, then check if log file exists and contains correct task records",
+      "required_tools": ["list_dir", "file_write"],
+      "complexity": "Simple - verify logging system",
+      "test_capabilities": ["logging", "state_persistence"],
+      "verification": "python -c \"import os; log='ralph_log.txt'; assert os.path.exists(log), 'Log not found'; content=open(log, encoding='utf-8', errors='ignore').read(); assert 'Task 1' in content or len(content) > 0; print('OK: logging works')\"",
+      "expected": "Ralph automatically records task execution results in ralph_log.txt"
+    },
+    {
+      "id": 3,
+      "title": "Tool Missing - Self-Create Tool",
+      "description": "Test if Ralph creates single-script tool when tool does not exist",
+      "goal": "Need to count lines of code in directory, but count_lines tool does not exist, Ralph should create it",
+      "required_tools": ["list_dir", "file_read", "file_write"],
+      "complexity": "Medium - needs to self-create tool",
+      "test_capabilities": ["tool_missing_detection", "self_create_tool"],
+      "verification": "python -c \"import os; tool='tools/custom/count_lines.py'; assert os.path.exists(tool), 'Tool not created'; content=open(tool, encoding='utf-8', errors='ignore').read(); assert 'count_lines' in content.lower() or 'execute' in content.lower(); print('OK: self-created tool')\"",
+      "expected": "Ralph detects count_lines tool does not exist, creates it in tools/custom/count_lines.py"
+    },
+    {
+      "id": 4,
+      "title": "Multi-Step Execution - Chained Tasks",
+      "description": "Test if Ralph can execute multi-step chained tasks with correct state updates",
+      "goal": "1) List all .py files, 2) Count lines in each file, 3) Generate summary report to output/summary.txt",
+      "required_tools": ["list_dir", "file_read", "file_write", "count_lines"],
+      "complexity": "Complex - multi-step chained",
+      "test_capabilities": ["multi_step_execution", "state_update", "tool_combination"],
+      "verification": "python -c \"import os; report='output/summary.txt'; assert os.path.exists(report), 'Summary not found'; print('OK: multi-step completed')\"",
+      "expected": "Ralph executes 3 steps in order, updates state after each step, generates summary report"
+    },
+    {
+      "id": 5,
+      "title": "Error Recovery - Retry After Failure",
+      "description": "Test if Ralph records failure reason and retries when task fails",
+      "goal": "Deliberately provide a problematic task (read non-existent file), check if Ralph correctly records failure and attempts recovery",
+      "required_tools": ["file_read"],
+      "complexity": "Medium - error handling",
+      "test_capabilities": ["error_detection", "failure_logging", "retry_mechanism"],
+      "verification": "python -c \"import os; log='ralph_log.txt'; assert os.path.exists(log), 'Log not found'; content=open(log, encoding='utf-8', errors='ignore').read(); assert len(content) > 0; print('OK: error recovery logged')\"",
+      "expected": "Ralph records failure reason, attempts recovery or marks as needing manual intervention"
+    },
+    {
+      "id": 6,
+      "title": "Complex Problem Decomposition - Atomic Split",
+      "description": "Test if Ralph can decompose complex problems into multiple atomic steps",
+      "goal": "Analyze project structure, identify test files (test_ prefix), calculate test coverage",
+      "required_tools": ["list_dir", "file_read", "count_lines"],
+      "complexity": "Complex - problem decomposition",
+      "test_capabilities": ["problem_decomposition", "atomic_split", "deep_analysis"],
+      "verification": "python -c \"import os; cov='output/coverage_report.txt'; assert os.path.exists(cov), 'Coverage report not found'; print('OK: problem decomposed')\"",
+      "expected": "Ralph decomposes complex problem: list files -> identify test files -> count lines -> calculate coverage"
+    },
+    {
+      "id": 7,
+      "title": "Learning Ability - Update Based on Feedback",
+      "description": "Test if Ralph can update subsequent behavior based on previous execution feedback",
+      "goal": "Execute a simple task first, then optimize subsequent task execution strategy based on feedback in logs",
+      "required_tools": ["list_dir", "file_write"],
+      "complexity": "Complex - learning and adaptation",
+      "test_capabilities": ["feedback_learning", "strategy_update", "incremental_improvement"],
+      "verification": "python -c \"import os; log='ralph_log.txt'; assert os.path.exists(log), 'Log not found'; content=open(log, encoding='utf-8', errors='ignore').read(); lines=content.split('\\n'); assert len(lines) >= 4, 'Not enough log entries'; print('OK: adaptive learning')\"",
+      "expected": "Ralph learns from logs, optimizes subsequent task execution"
+    },
+    {
+      "id": 8,
+      "title": "Full Flow - End-to-End Test",
+      "description": "Test full Ralph flow: receive task -> decompose -> execute -> verify -> log -> update state",
+      "goal": "Comprehensive test: analyze current project, generate complete project report with file structure, code stats, test coverage",
+      "required_tools": ["list_dir", "file_read", "count_lines", "file_write"],
+      "complexity": "Hardest - full flow",
+      "test_capabilities": ["full_loop", "comprehensive_test"],
+      "verification": "python -c \"import os; report='output/project_report.txt'; assert os.path.exists(report), 'Project report not found'; content=open(report, encoding='utf-8', errors='ignore').read(); print('OK: full flow completed')\"",
+      "expected": "Ralph completes all steps, generates project report with all required content"
+    }
+  ]
+}
