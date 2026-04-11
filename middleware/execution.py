@@ -37,7 +37,8 @@ class ExecutionMiddleware:
     def execute_step(
         self,
         step: Dict[str, Any],
-        state: Dict[str, Any]
+        state: Dict[str, Any],
+        params: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         执行单个步骤
@@ -61,40 +62,16 @@ class ExecutionMiddleware:
         step: Dict[str, Any],
         state: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """处理工具创建"""
+        """处理工具创建 - 需要由模型生成工具代码"""
         required_tool = step.get("required_tool")
-        retry_count = state.get("retry_count", 0)
 
-        if retry_count >= self.max_retries:
-            return {
-                "success": False,
-                "error": f"工具 {required_tool} 创建失败，已达最大重试次数",
-                "action": "fail"
-            }
-
-        purpose = step.get("description", f"实现 {required_tool} 功能")
-        tool_code = self._generate_tool_code(required_tool, purpose, state)
-
-        result = self.tool_verifier.verify(required_tool, tool_code)
-
-        if result["pass"]:
-            self.tool_verifier.register_tool(required_tool, {
-                "path": result["tool_path"],
-                "description": purpose,
-                "status": "available"
-            })
-            return {
-                "success": True,
-                "message": f"工具 {required_tool} 创建成功",
-                "tool_created": required_tool,
-                "action": "retry_step"
-            }
-        else:
-            return {
-                "success": False,
-                "error": f"工具验证失败: {result['reason']}",
-                "action": "retry_creation"
-            }
+        return {
+            "success": False,
+            "error": f"工具 '{required_tool}' 不存在，请创建它",
+            "action": "tool_not_found",
+            "tool_name": required_tool,
+            "hint": "使用 create_tool action 创建新工具"
+        }
 
     def _handle_normal_execution(
         self,
@@ -113,7 +90,7 @@ class ExecutionMiddleware:
             }
 
         try:
-            result = self._run_tool(required_tool, tool_path, state)
+            result = self._run_tool(required_tool, tool_path, state, params)
             return self._verify_result(step, result)
         except Exception as e:
             return {
@@ -168,7 +145,8 @@ def execute(**params) -> dict:
         self,
         tool_name: str,
         tool_path: Path,
-        state: Dict[str, Any]
+        state: Dict[str, Any],
+        params: Dict[str, Any]
     ) -> Dict[str, Any]:
         """运行工具"""
         spec = importlib.util.spec_from_file_location(tool_name, tool_path)
@@ -181,13 +159,14 @@ def execute(**params) -> dict:
         if not hasattr(module, 'execute'):
             raise AttributeError(f"工具 {tool_name} 缺少 execute 函数")
 
-        params = {
+        exec_params = {
             "task_goal": state.get("goal", ""),
             "current_step": state.get("current_step", 0),
-            "state": state
+            "state": state,
+            **params
         }
 
-        result = module.execute(**params)
+        result = module.execute(**exec_params)
 
         if not isinstance(result, dict):
             raise TypeError(f"工具返回格式错误: {type(result)}")

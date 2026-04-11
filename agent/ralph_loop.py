@@ -9,6 +9,7 @@ Ralph 风格自主循环：
 """
 
 import json
+import re
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from datetime import datetime
@@ -180,29 +181,36 @@ class RalphLoop:
 
 {step_info}
 
+可用工具列表:
+{json.dumps(context.get('available_tools', []), ensure_ascii=False, indent=2)}
+
 已创建的工具:
 {json.dumps(context.get('tool_inventory', {}), ensure_ascii=False, indent=2)}
 
 最近执行记录:
-{json.dumps(context.get('execution_log', []), ensure_ascii=False, indent=2)}
+{json.dumps(context.get('execution_log', [])[-3:], ensure_ascii=False, indent=2)}
 
 学习记录:
 {chr(10).join(f"- {l}" for l in context.get('learnings', []))}
 
-请根据以上信息执行当前步骤。
+请根据任务目标和可用工具，决定下一步行动。
+
+【重要】如果当前步骤需要的工具不存在，你必须先创建工具！
+工具代码必须放在 `./tools/custom/` 目录下，文件名必须是 `{{工具名}}.py`。
+工具必须定义 `execute(**kwargs) -> dict` 函数。
 
 如果需要创建工具，返回:
 {{
   "action": "create_tool",
-  "tool_name": "工具名",
-  "tool_code": "Python代码"
+  "tool_name": "你要创建的工具名",
+  "tool_code": "def execute(**kwargs) -> dict:\\n    # 你的工具代码\\n    pass"
 }}
 
 如果执行工具，返回:
 {{
   "action": "execute",
-  "tool_name": "工具名",
-  "params": {{}}
+  "tool_name": "你要使用的工具名",
+  "params": {{"参数名": "参数值"}}
 }}
 
 如果步骤完成，返回:
@@ -275,7 +283,7 @@ def execute(**params) -> dict:
         }
 
     def _parse_response(self, response: Any) -> Dict[str, Any]:
-        """解析 LLM 响应"""
+        """解析 LLM 响应，支持截断的 JSON"""
         if isinstance(response, dict):
             return response
 
@@ -283,9 +291,26 @@ def execute(**params) -> dict:
             try:
                 return json.loads(response)
             except json.JSONDecodeError:
+                # 尝试提取 JSON 块
+                json_match = re.search(r'\{[^{}]*"action"[^{}]*\}[^{}]*', response, re.DOTALL)
+                if json_match:
+                    try:
+                        return json.loads(json_match.group(0))
+                    except:
+                        pass
+
+                # 尝试查找 JSON 开始和结束
+                if '{' in response and '}' in response:
+                    start = response.find('{')
+                    end = response.rfind('}') + 1
+                    try:
+                        return json.loads(response[start:end])
+                    except:
+                        pass
+
                 return {
                     "action": "error",
-                    "error": f"无法解析响应: {response[:100]}"
+                    "error": f"无法解析响应: {response[:200]}"
                 }
 
         return {
@@ -324,6 +349,18 @@ def execute(**params) -> dict:
                     "path": verify_result["tool_path"]
                 })
 
+                # 更新 plan 使用新创建的工具
+                task_id = state.get("task_id")
+                current_step = state.get("current_step", 0)
+                atomic_plan = state.get("atomic_plan", [])
+                if current_step < len(atomic_plan):
+                    atomic_plan[current_step]["required_tool"] = tool_name
+                    atomic_plan[current_step]["tool_status"] = "available"
+                    self.task_state.update_step(task_id, current_step, {
+                        "required_tool": tool_name,
+                        "tool_status": "available"
+                    })
+
                 return {
                     "success": True,
                     "action": "tool_created",
@@ -340,28 +377,29 @@ def execute(**params) -> dict:
             tool_name = response.get("tool_name")
             params = response.get("params", {})
 
-            step = state.get("atomic_plan", [])[state.get("current_step", 0)]
+            step_index = state.get("current_step", 0)
+            step = state.get("atomic_plan", [])[step_index]
             step["status"] = "in_progress"
 
-            result = self.execution.execute_step(step, state)
+            exec_result = self.execution.execute_step(step, state, params)
 
             self.task_state.add_log(state["task_id"], {
                 "type": "execution",
                 "tool": tool_name,
-                "result": result
+                "result": exec_result
             })
 
-            if result.get("success"):
+            if exec_result.get("success"):
                 return {
                     "success": True,
-                    "action": "executed",
-                    "result": result
+                    "action": "step_completed",
+                    "completed_step": step_index
                 }
             else:
                 return {
                     "success": False,
                     "action": "execution_failed",
-                    "error": result.get("error")
+                    "error": exec_result.get("error")
                 }
 
         elif action == "step_complete":
@@ -369,9 +407,6 @@ def execute(**params) -> dict:
 
             if current_step_index < len(state.get("atomic_plan", [])):
                 state["atomic_plan"][current_step_index]["status"] = "completed"
-
-            state["current_step"] = current_step_index + 1
-            state["retry_count"] = 0
 
             return {
                 "success": True,
@@ -415,13 +450,16 @@ def execute(**params) -> dict:
                     completed_step,
                     {"status": "completed"}
                 )
-                self.task_state.advance_step(task_id)
             elif result.get("action") == "tool_created":
                 tool_name = result.get("tool_name")
                 self.task_state.mark_tool_created(task_id, tool_name, f"./tools/custom/{tool_name}.py")
         else:
             error = result.get("error", "Unknown error")
             self.task_state.set_retry(task_id, error)
+
+        # 保存 current_step 的变化
+        if result.get("success") and result.get("action") == "step_completed":
+            self.task_state.advance_step(task_id)
 
         return self.task_state.load_task(task_id)
 

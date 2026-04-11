@@ -73,7 +73,7 @@ class OllamaRuntime:
     def _request(self, method: str, path: str, **kwargs) -> requests.Response:
         """发送请求到 Ollama API"""
         url = f"{self.base_url}{path}"
-        kwargs.setdefault("timeout", 60)
+        kwargs.setdefault("timeout", 300)
         response = requests.request(method, url, **kwargs)
         response.raise_for_status()
         return response

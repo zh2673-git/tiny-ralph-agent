@@ -1,0 +1,38 @@
+{
+  "analyze_directory_structure": {
+    "path": "tools\\analyze_directory_structure.py",
+    "description": "Auto-created: analyze_directory_structure",
+    "status": "available",
+    "registered_at": "2026-04-11T11:45:07.070128"
+  },
+  "python_stats": {
+    "path": "tools\\python_stats.py",
+    "description": "Auto-created: python_stats",
+    "status": "available",
+    "registered_at": "2026-04-11T11:47:20.387995"
+  },
+  "auto_tool": {
+    "path": "tools\\auto_tool.py",
+    "description": "Auto-created: auto_tool",
+    "status": "available",
+    "registered_at": "2026-04-11T11:49:53.099691"
+  },
+  "gcd_tool": {
+    "path": "tools\\gcd_tool.py",
+    "description": "Auto-created: gcd_tool",
+    "status": "available",
+    "registered_at": "2026-04-11T11:49:17.883811"
+  },
+  "create_output_directory": {
+    "path": "tools\\create_output_directory.py",
+    "description": "Auto-created: create_output_directory",
+    "status": "available",
+    "registered_at": "2026-04-11T10:16:50.931406"
+  },
+  "def_counter": {
+    "path": "tools\\def_counter.py",
+    "description": "Auto-created: def_counter",
+    "status": "available",
+    "registered_at": "2026-04-11T11:48:35.930422"
+  }
+}
